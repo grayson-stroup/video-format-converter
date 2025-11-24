@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Converted videos (output files)
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.avi
+*.gif
+ConvertedVideos/
+ConvertedGIF/
+output/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+.AppleDouble
+.LSOverride
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# Original/example videos (optional - uncomment to include example videos)
+# !examples/*.mp4
+# !examples/*.mov
+
