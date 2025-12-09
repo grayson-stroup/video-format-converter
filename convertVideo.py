@@ -6,12 +6,52 @@ Built with CustomTkinter for iOS-inspired design
 """
 
 import os
+import re
 import sys
 import random
 import threading
 from pathlib import Path
+import warnings
+
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
+
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
+
+
+def ensure_antialias_compat():
+    """Ensure PIL.Image exposes ANTIALIAS to satisfy MoviePy legacy usage."""
+    if Image is None:
+        return
+
+    resampling = getattr(Image, "Resampling", None)
+    if resampling and not hasattr(Image, "ANTIALIAS"):
+        setattr(Image, "ANTIALIAS", getattr(resampling, "LANCZOS", resampling.LANCZOS))
+
+
+warnings.filterwarnings(
+    "ignore",
+    message=r"resource_tracker: There appear to be .* leaked semaphore objects to clean up at shutdown: .*",
+    category=UserWarning,
+    module=r"multiprocessing\.resource_tracker"
+)
+
+
+def _append_warning_filter_env():
+    """Add a PYTHONWARNINGS rule to ignore resource_tracker warnings in child processes."""
+    filter_rule = "ignore::UserWarning:multiprocessing.resource_tracker"
+    existing = os.environ.get("PYTHONWARNINGS", "")
+    rules = [rule for rule in existing.split(",") if rule]
+    if filter_rule in rules:
+        return
+    rules.append(filter_rule)
+    os.environ["PYTHONWARNINGS"] = ",".join(rules)
+
+
+_append_warning_filter_env()
 
 # Try to import moviepy with helpful error message
 try:
@@ -161,9 +201,10 @@ class VideoConverterApp:
         self.root = root
         self.root.title("Video Converter")
         self.root.geometry("900x900")
+        ensure_antialias_compat()
         
         # Set minimum window size
-        self.root.minsize(850, 850)
+        self.root.minsize(850, 975)
         
         self.selected_files = []
         self.output_folder = None
@@ -195,13 +236,32 @@ class VideoConverterApp:
         
         current_row = 0
         
-        # Title section
+        # Header section with title and reset action
+        header_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        header_frame.grid(row=current_row, column=0, columnspan=3, sticky="ew", pady=(0, 5))
+        header_frame.grid_columnconfigure(0, weight=1)
+        header_frame.grid_columnconfigure(1, weight=0)
+
         title_label = ctk.CTkLabel(
-            main_frame,
+            header_frame,
             text="Video Converter",
             font=ctk.CTkFont(size=32, weight="bold")
         )
-        title_label.grid(row=current_row, column=0, columnspan=3, pady=(0, 5), sticky="w")
+        title_label.grid(row=0, column=0, sticky="w")
+
+        restart_icon_btn = ctk.CTkButton(
+            header_frame,
+            text="↻",
+            command=self.reset_form,
+            width=48,
+            height=48,
+            corner_radius=24,
+            font=ctk.CTkFont(size=20),
+            fg_color="#3a3f4a",
+            hover_color="#555b6e"
+        )
+        restart_icon_btn.grid(row=0, column=1, sticky="e", padx=(10, 0))
+
         current_row += 1
         
         subtitle_label = ctk.CTkLabel(
@@ -421,6 +481,36 @@ class VideoConverterApp:
         )
         quality_info.grid(row=3, column=0, padx=20, pady=(0, 15), sticky="w")
         
+        # Max width slider (GIF-only)
+        max_width_frame = ctk.CTkFrame(self.gif_settings_frame, fg_color="transparent")
+        max_width_frame.grid(row=4, column=0, padx=20, pady=(0, 15), sticky="ew")
+
+        max_width_label = ctk.CTkLabel(
+            max_width_frame,
+            text="Max Width:",
+            font=ctk.CTkFont(size=12)
+        )
+        max_width_label.pack(side="left", padx=(0, 15))
+
+        self.max_width_var = ctk.IntVar(value=700)
+        self.max_width_value_label = ctk.CTkLabel(
+            max_width_frame,
+            text=f"{self.max_width_var.get()} px",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            width=50
+        )
+        self.max_width_value_label.pack(side="right", padx=(10, 0))
+
+        max_width_slider = ctk.CTkSlider(
+            max_width_frame,
+            from_=400,
+            to=1400,
+            number_of_steps=20,
+            variable=self.max_width_var,
+            command=self.update_max_width_label,
+            width=200
+        )
+        max_width_slider.pack(side="left", padx=(0, 10))
         # Store row numbers for dynamic placement
         self.gif_settings_row = current_row
         self.status_label_row = current_row + 1  # "Converting X of Y" above button
@@ -441,7 +531,7 @@ class VideoConverterApp:
         # Using bg_color="transparent" to remove the rectangular background
         self.convert_btn = ctk.CTkButton(
             main_frame,
-            text="Convert Videos",
+            text="Convert Video(s)",
             command=self.start_conversion,
             width=240,
             height=50,
@@ -454,7 +544,7 @@ class VideoConverterApp:
         self.convert_btn.grid(row=self.convert_button_row, column=0, columnspan=3, pady=(5, 15))
         
         # Store original button text for animation
-        self.original_btn_text = "Convert Videos"
+        self.original_btn_text = "Convert Video(s)"
         self.animation_running = False
         self.animation_frame = 0
         
@@ -505,24 +595,18 @@ class VideoConverterApp:
         """Update scale label when slider changes"""
         percent = int(float(value) * 100)
         self.scale_value_label.configure(text=f"{percent}%")
+
+    def update_max_width_label(self, value):
+        """Update max width label for GIF resizing"""
+        self.max_width_value_label.configure(text=f"{int(float(value))} px")
     
     def on_format_change(self, choice):
         """Show/hide GIF settings based on format selection"""
         if choice == 'GIF':
             # Place GIF settings below the three cards, spanning all columns
             self.gif_settings_frame.grid(row=self.gif_settings_row, column=0, columnspan=3, pady=(0, 10), sticky="ew")
-            # Move everything below down by 1 row
-            self.progress_label.grid(row=self.gif_settings_row + 2, column=0, columnspan=3, pady=(5, 5))
-            self.convert_btn.grid(row=self.gif_settings_row + 3, column=0, columnspan=3, pady=(5, 15))
-            self.progress_bar.grid(row=self.gif_settings_row + 4, column=0, columnspan=3, pady=(0, 15))
-            self.status_frame.grid(row=self.gif_settings_row + 5, column=0, columnspan=3, sticky="nsew", pady=(0, 0))
         else:
-            self.gif_settings_frame.grid_forget()
-            # Move everything back to normal positions
-            self.progress_label.grid(row=self.status_label_row, column=0, columnspan=3, pady=(5, 5))
-            self.convert_btn.grid(row=self.convert_button_row, column=0, columnspan=3, pady=(5, 15))
-            self.progress_bar.grid(row=self.progress_row, column=0, columnspan=3, pady=(0, 15))
-            self.status_frame.grid(row=self.status_row, column=0, columnspan=3, sticky="nsew", pady=(0, 0))
+            self.gif_settings_frame.grid_remove()
     
     def select_files(self):
         """Open file dialog to select videos"""
@@ -610,6 +694,50 @@ class VideoConverterApp:
                 text_color="#2ecc71"
             )
             self.log_status(f"Output folder: {folder}")
+
+    def reset_form(self):
+        """Reset the UI form to its default state"""
+        if self.animation_running or self.simulated_progress_running:
+            messagebox.showwarning(
+                "Conversion running",
+                "Please wait for the current conversion to finish before resetting."
+            )
+            return
+
+        self.selected_files = []
+        self.files_label.configure(
+            text="No files selected",
+            text_color=("gray50", "gray50")
+        )
+        self.output_folder = None
+        self.output_status_indicator.configure(
+            text="○",
+            text_color=("gray60", "gray60")
+        )
+        self.output_label.configure(
+            text="Same as source of video(s)",
+            text_color=("gray60", "gray60")
+        )
+        self.format_var.set('MP4')
+        self.on_format_change('MP4')
+        self.fps_var.set(15)
+        self.update_fps_label(15)
+        self.scale_var.set(1.0)
+        self.update_scale_label(1.0)
+        self.max_width_var.set(700)
+        self.update_max_width_label(700)
+
+        self.progress_label.configure(text="")
+        self.progress_bar.set(0)
+        self.progress_bar.grid_remove()
+
+        self.status_text.delete("0.0", "end")
+        self.used_messages = []
+        self.simulated_progress_running = False
+        self.stop_funny_messages()
+        self.stop_button_animation()
+        self.convert_btn.configure(state="normal")
+        self.log_status("Form reset to defaults.")
     
     def log_status(self, message):
         """Add a message to the status text area"""
@@ -805,6 +933,14 @@ class VideoConverterApp:
         if self.funny_message_running:
             self.root.after(delay, self.show_funny_message)
     
+    @staticmethod
+    def _normalize_dimension(value):
+        """Round to the nearest even integer and enforce a minimum size"""
+        even = int(round(value))
+        if even % 2 != 0:
+            even -= 1
+        return max(2, even)
+    
     def convert_single_video(self, input_path, target_format):
         """Convert a single video file"""
         input_path = Path(input_path)
@@ -823,46 +959,57 @@ class VideoConverterApp:
         
         self.log_status(f"Converting {input_path.name}...")
         
-        # Load video
-        clip = VideoFileClip(str(input_path))
+        clip = None
+        try:
+            clip = VideoFileClip(str(input_path))
+            
+            if target_format == 'GIF':
+                # High-quality GIF conversion
+                fps = self.fps_var.get()
+                scale = self.scale_var.get()
+                
+                # Resize if needed, ensuring ffmpeg-friendly even dims
+                if scale < 1.0:
+                    target_width = self._normalize_dimension(clip.w * scale)
+                    target_height = self._normalize_dimension(clip.h * scale)
+                    clip = clip.resize(newsize=(target_width, target_height))
+                
+                max_width = self.max_width_var.get()
+                if clip.w > max_width:
+                    ratio = max_width / clip.w
+                    max_width_even = self._normalize_dimension(max_width)
+                    target_height = self._normalize_dimension(clip.h * ratio)
+                    clip = clip.resize(newsize=(max_width_even, target_height))
+                
+                clip.write_gif(
+                    str(output_path),
+                    fps=fps,
+                    program='ffmpeg',
+                    opt='OptimizePlus',
+                    fuzz=1
+                )
+            else:
+                # Convert to video format
+                codec_map = {
+                    'MP4': 'libx264',
+                    'MOV': 'libx264',
+                    'MKV': 'libx264',
+                    'WEBM': 'libvpx',
+                    'AVI': 'mpeg4'
+                }
+                
+                codec = codec_map.get(target_format, 'libx264')
+                
+                clip.write_videofile(
+                    str(output_path),
+                    codec=codec,
+                    audio_codec='aac' if target_format in ['MP4', 'MOV', 'MKV'] else 'libvorbis',
+                    logger=None  # Suppress moviepy progress bar
+                )
+        finally:
+            if clip:
+                clip.close()
         
-        if target_format == 'GIF':
-            # High-quality GIF conversion
-            fps = self.fps_var.get()
-            scale = self.scale_var.get()
-            
-            # Resize if needed
-            if scale < 1.0:
-                clip = clip.resize(scale)
-            
-            # Write GIF with high quality settings
-            clip.write_gif(
-                str(output_path),
-                fps=fps,
-                program='ffmpeg',
-                opt='OptimizePlus',  # Better optimization
-                fuzz=1  # Reduces file size while maintaining quality
-            )
-        else:
-            # Convert to video format
-            codec_map = {
-                'MP4': 'libx264',
-                'MOV': 'libx264',
-                'MKV': 'libx264',
-                'WEBM': 'libvpx',
-                'AVI': 'mpeg4'
-            }
-            
-            codec = codec_map.get(target_format, 'libx264')
-            
-            clip.write_videofile(
-                str(output_path),
-                codec=codec,
-                audio_codec='aac' if target_format in ['MP4', 'MOV', 'MKV'] else 'libvorbis',
-                logger=None  # Suppress moviepy progress bar
-            )
-        
-        clip.close()
         return str(output_path)
 
 def main():
