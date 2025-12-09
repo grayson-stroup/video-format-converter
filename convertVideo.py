@@ -208,8 +208,8 @@ class VideoConverterApp:
         
         self.selected_files = []
         self.output_folder = None
-        self.last_input_dir = os.path.expanduser("~/Desktop")
-        self.last_output_dir = os.path.expanduser("~/Desktop")
+        self.last_input_dir = os.path.expanduser("~/Documents")
+        self.last_output_dir = os.path.expanduser("~/Documents")
         
         # Simulated progress tracking
         self.simulated_progress = 0.0
