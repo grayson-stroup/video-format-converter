@@ -484,13 +484,14 @@ class VideoConverterApp:
         # Max width slider (GIF-only)
         max_width_frame = ctk.CTkFrame(self.gif_settings_frame, fg_color="transparent")
         max_width_frame.grid(row=4, column=0, padx=20, pady=(0, 15), sticky="ew")
+        max_width_frame.grid_columnconfigure(1, weight=1)
 
         max_width_label = ctk.CTkLabel(
             max_width_frame,
             text="Max Width:",
             font=ctk.CTkFont(size=12)
         )
-        max_width_label.pack(side="left", padx=(0, 15))
+        max_width_label.grid(row=0, column=0, sticky="w")
 
         self.max_width_var = ctk.IntVar(value=700)
         self.max_width_value_label = ctk.CTkLabel(
@@ -499,10 +500,14 @@ class VideoConverterApp:
             font=ctk.CTkFont(size=12, weight="bold"),
             width=50
         )
-        self.max_width_value_label.pack(side="right", padx=(10, 0))
+        self.max_width_value_label.grid(row=0, column=2, sticky="e")
+
+        max_width_controls_frame = ctk.CTkFrame(max_width_frame, fg_color="transparent")
+        max_width_controls_frame.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(5, 0))
+        max_width_controls_frame.grid_columnconfigure(0, weight=1)
 
         max_width_slider = ctk.CTkSlider(
-            max_width_frame,
+            max_width_controls_frame,
             from_=400,
             to=1400,
             number_of_steps=20,
@@ -510,7 +515,21 @@ class VideoConverterApp:
             command=self.update_max_width_label,
             width=200
         )
-        max_width_slider.pack(side="left", padx=(0, 10))
+        max_width_slider.grid(row=0, column=0, sticky="w")
+
+        self.full_width_var = ctk.BooleanVar(value=False)
+        full_width_checkbox = ctk.CTkCheckBox(
+            max_width_controls_frame,
+            text="Convert at full width",
+            variable=self.full_width_var,
+            command=self.update_full_width_state,
+            onvalue=True,
+            offvalue=False
+        )
+        full_width_checkbox.grid(row=0, column=1, padx=(10, 0), sticky="e")
+
+        self.max_width_slider = max_width_slider
+        self.update_full_width_state()
         # Store row numbers for dynamic placement
         self.gif_settings_row = current_row
         self.status_label_row = current_row + 1  # "Converting X of Y" above button
@@ -599,6 +618,11 @@ class VideoConverterApp:
     def update_max_width_label(self, value):
         """Update max width label for GIF resizing"""
         self.max_width_value_label.configure(text=f"{int(float(value))} px")
+
+    def update_full_width_state(self, *_):
+        """Enable/disable max width slider based on full-width option"""
+        state = "disabled" if self.full_width_var.get() else "normal"
+        self.max_width_slider.configure(state=state)
     
     def on_format_change(self, choice):
         """Show/hide GIF settings based on format selection"""
@@ -726,6 +750,8 @@ class VideoConverterApp:
         self.update_scale_label(1.0)
         self.max_width_var.set(700)
         self.update_max_width_label(700)
+        self.full_width_var.set(False)
+        self.update_full_width_state()
 
         self.progress_label.configure(text="")
         self.progress_bar.set(0)
@@ -974,12 +1000,13 @@ class VideoConverterApp:
                     target_height = self._normalize_dimension(clip.h * scale)
                     clip = clip.resize(newsize=(target_width, target_height))
                 
-                max_width = self.max_width_var.get()
-                if clip.w > max_width:
-                    ratio = max_width / clip.w
-                    max_width_even = self._normalize_dimension(max_width)
-                    target_height = self._normalize_dimension(clip.h * ratio)
-                    clip = clip.resize(newsize=(max_width_even, target_height))
+                if not self.full_width_var.get():
+                    max_width = self.max_width_var.get()
+                    if clip.w > max_width:
+                        ratio = max_width / clip.w
+                        max_width_even = self._normalize_dimension(max_width)
+                        target_height = self._normalize_dimension(clip.h * ratio)
+                        clip = clip.resize(newsize=(max_width_even, target_height))
                 
                 clip.write_gif(
                     str(output_path),
